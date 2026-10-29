@@ -1,0 +1,30 @@
+[package]
+name = "tempus"
+version = "0.1.0"
+description = "编码动效工作室：人写代码，实时渲染成片"
+authors = ["小方工作室"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.75"
+
+[lib]
+name = "tempus_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.14"
+tiny_http = "0.12"
+tungstenite = "0.21"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+portable-pty = "0.8"
+
+[profile.release]
+opt-level = 2
+lto = false

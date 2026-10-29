@@ -1,0 +1,39 @@
+{
+  "skills": [
+    {
+      "name": "Tempus 运行时 API",
+      "file": "tempus-api.md",
+      "desc": "useFrame / interpolate / spring / Sequence 全部 API 与确定性渲染守则，写代码前必读。"
+    },
+    {
+      "name": "Motion Studio 总控",
+      "file": "motion-studio.md",
+      "desc": "全融合动画与宣传片生成链：意图理解、任务路由、九大增强、统一工作流。"
+    },
+    {
+      "name": "逐帧手绘动画（painted-animation）",
+      "file": "painted-animation.md",
+      "desc": "手绘水彩质感逐帧动画方法论：分镜、节拍、reads、转场、渲染检视循环。"
+    },
+    {
+      "name": "动感条（kinetic-reel）",
+      "file": "kinetic-reel.md",
+      "desc": "大字报动感条与 showreel 方法论：类型为王、节拍锁定、连续形变转场。"
+    },
+    {
+      "name": "宣传片一镜（onetake）",
+      "file": "onetake.md",
+      "desc": "产品宣传片方法论：节拍衔接而非替换、参考解构、运镜跟拍、验收神谕。"
+    },
+    {
+      "name": "导演级 2D 动画（director-grade）",
+      "file": "director-grade.md",
+      "desc": "导演纪律门禁：spec 先行、角色锁定、配色弧线、切镜动机、音画同表。"
+    },
+    {
+      "name": "液态玻璃（liquid-glass）",
+      "file": "liquid-glass.md",
+      "desc": "Web 液态玻璃质感实现：折射位移、高光边缘、动态形变，含可直接粘贴的代码。"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+﻿node_modules/
+dist/
+target/
+.shots/
+.workbuddy/
+*.exe
+*.msi
+*.lnk
+/ffmpeg/
+_build.log

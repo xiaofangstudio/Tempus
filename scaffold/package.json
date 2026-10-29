@@ -1,0 +1,36 @@
+{
+  "name": "tempus",
+  "version": "0.1.0",
+  "description": "编码动效工作室：人写代码，实时渲染成片",
+  "author": "小方工作室",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:render": "vite build --config vite.render.config.ts",
+    "build": "npm run build:render && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "esbuild-wasm": "^0.24.2",
+    "monaco-editor": "^0.52.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.170.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
