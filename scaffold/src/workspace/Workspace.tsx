@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { api, listen } from '../core/tauri';
 import { compileProject, buildDocumentCached } from '../core/compile';
-import { buildMediaTable, AUDIO_EXT } from '../core/media';
+import { buildMediaTable, AUDIO_EXT, MEDIA_EXT } from '../core/media';
 import { mixTimelineWav, bytesToBase64, type AudioClip } from '../core/audio';
 import type { ScopeFile } from './AudioScope';
 import type { CompInfo, Mark, ProjectMeta, RenderProgress } from '../core/types';
@@ -20,7 +20,7 @@ import { ExportDialog } from './ExportDialog';
 import { RightPanels } from './RightPanels';
 import {
   Logo, IconBranch, IconExport, IconFile, IconRefresh, IconTerminal,
-  IconSearch, IconOutline, IconSettings, IconSave
+  IconSearch, IconOutline, IconSettings, IconSave, IconUpload
 } from '../ui/icons';
 
 /* 工作区编排：
@@ -200,6 +200,7 @@ export function Workspace({ projectDir, onExit }: Props) {
       if (changed && lastBuildRef.current && vendorRef.current) {
         const b = lastBuildRef.current;
         setSrcDoc(buildDocumentCached(vendorRef.current, b.userJs, b.userCss, activeRef.current, table));
+        setAudioFailed([]);
       }
     } catch { /* 素材扫描失败不影响编译 */ }
   }, [projectDir]);
@@ -219,12 +220,75 @@ export function Workspace({ projectDir, onExit }: Props) {
     return () => window.removeEventListener('message', onMsg);
   }, []);
 
+  /* 从系统拖文件进来 → 拷到工程的 assets/（省掉「先复制到别处再找路径」） */
+  const [dragOver, setDragOver] = useState(false);
+  const importDropped = useCallback(async (paths: string[]): Promise<void> => {
+    const media = paths.filter((p) => MEDIA_EXT.test(p));
+    if (!media.length) {
+      setToast('拖进来的不是媒体文件（支持 mp3 / wav / png / jpg / mp4 等）');
+      return;
+    }
+    const destDir = projectDir.replace(/[\\/]+$/, '') + '/assets';
+    const exists = async (p: string): Promise<boolean> => {
+      try { await api.fsRead(p); return true; } catch { return false; }
+    };
+    let ok = 0;
+    for (const src of media) {
+      const baseName = src.split(/[\\/]/).pop() ?? 'asset';
+      let name = baseName;
+      let i = 1;
+      while (await exists(destDir + '/' + name)) {
+        name = baseName.replace(/(\.[^.]+)$/, `-${i}$1`);
+        i++;
+      }
+      try {
+        const b64 = await api.fsReadBytes(src);
+        await api.fsWriteBytes(destDir + '/' + name, b64);
+        ok++;
+      } catch { /* 单个失败不影响其它 */ }
+    }
+    if (ok > 0) {
+      await refreshMedia();
+      bus.current.refreshTree?.();
+      void compileNowRef.current();
+      setToast(`已导入 ${ok} 个素材到 assets/`);
+    } else {
+      setToast('导入失败（文件被占用或没有权限）');
+    }
+  }, [projectDir, refreshMedia]);
+
+  useEffect(() => {
+    let alive = true;
+    let un: (() => void) | null = null;
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+        const off = await getCurrentWebview().onDragDropEvent((e) => {
+          if (e.payload.type === 'over') { setDragOver(true); return; }
+          if (e.payload.type === 'leave') { setDragOver(false); return; }
+          if (e.payload.type === 'drop') {
+            setDragOver(false);
+            void importDropped(e.payload.paths);
+          }
+        });
+        if (alive) un = off; else off();
+      } catch { /* 非 Tauri 环境（浏览器调试）忽略 */ }
+    })();
+    return () => { alive = false; un?.(); };
+  }, [importDropped]);
+
   /* 编译循环：src 变化 → esbuild → srcdoc（带重入保护） */
   const compileNowRef = useRef<() => Promise<void>>(async () => {});
+  const mediaReadyRef = useRef(false);
   const compileNow = useCallback(async () => {
     if (!meta || !vendorRef.current) return;
     if (compilingRef.current) { pendingRef.current = true; return; }
     compilingRef.current = true;
+    /* 首次编译前等素材表就绪：否则 Audio 拿到的是相对路径，会白报一次加载失败 */
+    if (!mediaReadyRef.current) {
+      try { await refreshMedia(); } catch { /* 素材缺失不该挡住编译 */ }
+      mediaReadyRef.current = true;
+    }
     setCompileMsg({ kind: 'busy', text: '正在编译……' });
     try {
       const res = await compileProject(projectDir, meta.entry);
@@ -249,7 +313,7 @@ export function Workspace({ projectDir, onExit }: Props) {
       compilingRef.current = false;
       if (pendingRef.current) { pendingRef.current = false; void compileNowRef.current(); }
     }
-  }, [meta, projectDir]);
+  }, [meta, projectDir, refreshMedia]);
   compileNowRef.current = compileNow;
 
   /* iframe 挂载/更新后：读取注册的合成，并缓存每种合成的导出文档（供 MCP 渲染） */
@@ -919,4 +983,22 @@ export default function Sound() {
           buildHtml={async (compId: string) => {
             if (!vendorRef.current) return '';
             const res = await compileProject(projectDir, meta!.entry);
-            if (!res.ok || !res.userJs) throw new Error(res.error ?? '编译失�
+            if (!res.ok || !res.userJs) throw new Error(res.error ?? '编译失败');
+            return buildDocumentCached(vendorRef.current, res.userJs, res.userCss ?? '', compId);
+          }}
+          progress={renderProg}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-card">
+            <IconUpload size={26} />
+            <b>松手导入素材</b>
+            <span>会复制到工程的 assets/ 目录，音频立刻出现在监视器里</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

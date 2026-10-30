@@ -19,6 +19,8 @@ export type WavePeaks = {
   /** 每个桶的最大振幅（0~1） */
   peaks: Float32Array;
   durationSec: number;
+  sampleRate: number;
+  channels: number;
   /** 用于判断波形是否已就绪 */
   ok: boolean;
 };
@@ -63,9 +65,15 @@ export async function waveform(absPath: string, buckets = 900): Promise<WavePeak
       }
       peaks[i] = m;
     }
-    return { peaks, durationSec: buf.duration, ok: true };
+    return {
+      peaks,
+      durationSec: buf.duration,
+      sampleRate: buf.sampleRate,
+      channels: buf.numberOfChannels,
+      ok: true
+    };
   } catch {
-    return { peaks: new Float32Array(0), durationSec: 0, ok: false };
+    return { peaks: new Float32Array(0), durationSec: 0, sampleRate: 0, channels: 0, ok: false };
   }
 }
 

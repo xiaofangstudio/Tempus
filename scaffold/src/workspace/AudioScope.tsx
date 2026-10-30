@@ -28,8 +28,17 @@ const peakCache = new Map<string, WavePeaks>();
 const COLORS = ['#1f6feb', '#0fa3a3', '#7a5af5', '#e0723c', '#3a9b52', '#c0399b'];
 const BUCKETS = 1600;
 
+const fmt = (sec: number): string => {
+  if (!Number.isFinite(sec) || sec <= 0) return '0s';
+  if (sec < 60) return `${sec.toFixed(1)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [peaks, setPeaks] = useState<Record<string, WavePeaks>>({});
   const [muted, setMuted] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -37,7 +46,34 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
   const dragRef = useRef(false);
   const trialRef = useRef<HTMLAudioElement | null>(null);
   const holdRef = useRef(0);
-  const holdTickRef = useRef(0);
+
+  /* 高度可拖：波形太扁看不清时直接拉高 */
+  const [h, setH] = useState(() => {
+    const v = Number(localStorage.getItem('tempus.scopeH'));
+    return Number.isFinite(v) && v >= 80 && v <= 420 ? v : 126;
+  });
+
+  const startResize = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = h;
+    document.body.classList.add('row-resizing');
+    const onMove = (ev: MouseEvent): void => {
+      setH(Math.round(Math.max(80, Math.min(420, startH - (ev.clientY - startY))) ));
+    };
+    const onUp = (): void => {
+      document.body.classList.remove('row-resizing');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const el = wrapRef.current;
+      if (el) {
+        try { localStorage.setItem('tempus.scopeH', String(Math.round(el.getBoundingClientRect().height))); }
+        catch { /* 忽略 */ }
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   /* 全部文件并行解码；已缓存的直接命中 */
   useEffect(() => {
@@ -171,6 +207,15 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
       }
     }
 
+    /* 水面倒影：把已经画好的网格+波形翻一份淡影，质感立刻不一样 */
+    ctx.save();
+    ctx.globalAlpha = 0.13;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(0, H);
+    ctx.scale(1, -1);
+    ctx.drawImage(canvas, 0, 0, W, H);
+    ctx.restore();
+
     /* 播放头（带光晕） */
     const px = curSec * pxPerSec;
     const head = dark ? '#ff7b80' : '#e5484d';
@@ -193,7 +238,6 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
     const holdDecay = 0.015;
     const prevHold = holdRef.current;
     holdRef.current = Math.max(level, prevHold - holdDecay);
-    holdTickRef.current = 0;
 
     const mx = plotW + 8;
     const mw = 10;
@@ -272,12 +316,17 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
   };
 
   const okCount = tracks.filter((t) => t.data?.ok).length;
+  const firstOk = tracks.find((t) => t.data?.ok)?.data;
+  const primaryInfo = firstOk
+    ? `${(firstOk.sampleRate / 1000).toFixed(1)}kHz · ${firstOk.channels === 1 ? '单声道' : firstOk.channels === 2 ? '立体声' : `${firstOk.channels} 声道`} · ${firstOk.durationSec.toFixed(2)}s`
+    : '';
   const failedSet = new Set((failed ?? []).map((s) => s.replace(/\\/g, '/').toLowerCase()));
   const failCount = files.filter((f) => failedSet.has(f.abs.replace(/\\/g, '/').toLowerCase())
     || failedSet.has(f.rel.toLowerCase())).length;
 
   return (
-    <div className="scope-wrap">
+    <div className="scope-wrap" ref={wrapRef} style={{ height: h }}>
+      <div className="scope-resize" onMouseDown={startResize} title="拖动调整示波器高度" />
       <div className="scope-head">
         <IconMusic size={13} />
         <span className="scope-title">音频监视</span>
@@ -303,7 +352,10 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
 
         {loading && <span className="scope-meta">解码中…</span>}
         {!loading && files.length > 0 && (
-          <span className="scope-meta mono">{okCount}/{files.length} 可用 · 时间轴 {totalSec.toFixed(1)}s</span>
+          <span className="scope-meta mono">
+            {okCount}/{files.length} 可用 · {fmt(totalSec)} 时间轴
+            {primaryInfo && ` · ${primaryInfo}`}
+          </span>
         )}
         {failCount > 0 && <span className="scope-warn" title="预览里这些音频没有加载成功">{failCount} 个加载失败</span>}
 

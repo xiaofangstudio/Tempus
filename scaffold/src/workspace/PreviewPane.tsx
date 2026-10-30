@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import type { CompInfo } from '../core/types';
 import { AudioScope, type ScopeFile } from './AudioScope';
-import { IconPlay, IconPause, IconLoop, IconStepBack, IconStepFwd, IconPrev, IconNext, IconZoomIn, IconZoomOut, IconFit, IconFocus, IconClose } from '../ui/icons';
+import { IconPlay, IconPause, IconLoop, IconStepBack, IconStepFwd, IconPrev, IconNext, IconZoomIn, IconZoomOut, IconFit, IconFocus, IconClose, IconVolume, IconVolumeMute } from '../ui/icons';
 
 /* 双监视器：上面是画面监视器（iframe srcdoc 实时渲染，尺寸随合成画幅），
  * 下面是音频示波器（长条、无画幅比例、真实波形）。两者共用同一个播放头。 */
@@ -49,6 +49,26 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
   const srcDocRef = useRef(srcDoc);
   srcDocRef.current = srcDoc;
 
+  /* 预览主音量：存本地，重载后自动重放（用户代码里的 volume 是相对值，不受影响） */
+  const [vol, setVol] = useState(() => {
+    const v = Number(localStorage.getItem('tempus.masterVol') ?? '1');
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+  });
+  const volRef = useRef(vol);
+  volRef.current = vol;
+
+  const applyVol = (): void => {
+    try {
+      const w = iframeRef.current?.contentWindow as any;
+      w?.__setMasterVolume?.(volRef.current);
+    } catch { /* 未就绪 */ }
+  };
+
+  useEffect(() => {
+    applyVol();
+    try { localStorage.setItem('tempus.masterVol', String(vol)); } catch { /* 忽略 */ }
+  }, [vol]);
+
   useImperativeHandle(ref, () => ({
     seek: (f: number) => {
       try {
@@ -77,9 +97,10 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
     // srcDoc 变化 → iframe 重载 → load 后回调
     const ifr = iframeRef.current;
     if (!ifr) return;
-    const onLoad = (): void => { onReady(); };
+    const onLoad = (): void => { onReady(); applyVol(); };
     ifr.addEventListener('load', onLoad);
     return () => ifr.removeEventListener('load', onLoad);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onReady]);
 
   /* 舞台尺寸跟踪 */
@@ -103,6 +124,21 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [focus]);
+
+  /* M = 预览静音 / 取消静音（在编辑器里打字时不抢） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code !== 'KeyM' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (t?.closest?.('.monaco-editor')) return;
+      e.preventDefault();
+      setVol((v) => (v === 0 ? 1 : 0));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const pad = focus ? 48 : 28;
   const fitScale = comp && stageSize.w > 0
@@ -182,6 +218,20 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
         {btn(<IconFit size={14} />, mode === 'fit', '适应窗口', () => setMode('fit'), 'fit')}
         <div style={{ flex: 1 }} />
         {btn(<IconFocus size={14} />, focus, '专注模式（Esc 退出）', () => setFocus((v) => !v), 'focus')}
+        <div className="vline" />
+        <button
+          className={`icon-btn ${vol === 0 ? 'active' : ''}`}
+          title={vol === 0 ? '取消静音（M）' : '静音预览（M）'}
+          onClick={() => setVol(vol === 0 ? 1 : 0)}
+        >
+          {vol === 0 ? <IconVolumeMute size={15} /> : <IconVolume size={15} />}
+        </button>
+        <input
+          type="range" className="vol-slider" min={0} max={100} step={1}
+          value={Math.round(vol * 100)}
+          title={`预览音量 ${Math.round(vol * 100)}%`}
+          onChange={(e) => setVol(Number(e.target.value) / 100)}
+        />
         <div className="vline" />
         <span className="tc mono">帧 {frame} / {comp?.durationInFrames ?? 0} · {timecode(frame, comp?.fps ?? 30)}</span>
       </div>

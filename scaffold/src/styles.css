@@ -552,9 +552,17 @@ body.col-resizing iframe, body.col-resizing .monaco-editor { pointer-events: non
 
 /* ---------- 音频示波器（第二监视器） ---------- */
 .scope-wrap {
-  height: 118px; flex: none; display: flex; flex-direction: column;
-  border-top: 1px solid var(--line); background: var(--panel);
+  min-height: 80px; flex: none; display: flex; flex-direction: column;
+  border-top: 1px solid var(--line); background: var(--panel); position: relative;
 }
+/* 顶部拖高手柄 */
+.scope-resize {
+  position: absolute; top: -3px; left: 0; right: 0; height: 7px; z-index: 4;
+  cursor: row-resize; background: transparent;
+}
+.scope-resize:hover { background: linear-gradient(90deg, transparent, var(--brand), transparent); opacity: .45; }
+body.row-resizing { cursor: row-resize !important; user-select: none; }
+body.row-resizing iframe { pointer-events: none; }
 .preview-wrap.focus .scope-wrap { display: none; }
 .scope-head {
   height: 27px; flex: none; display: flex; align-items: center; gap: 7px;
@@ -568,6 +576,59 @@ body.col-resizing iframe, body.col-resizing .monaco-editor { pointer-events: non
 }
 .scope-meta { font-size: 10.5px; color: var(--txt3); }
 .scope-canvas { flex: 1; width: 100%; min-height: 0; display: block; cursor: crosshair; }
+
+/* 监视器的音频 chip：点击显隐某条轨 */
+.scope-chips { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+.scope-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 18px; padding: 0 7px; border-radius: 99px; cursor: pointer;
+  font-size: 10.5px; font-family: inherit; max-width: 150px;
+  border: 1px solid var(--line2); background: transparent; color: var(--txt3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.scope-chip > i {
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--chip, var(--brand)); opacity: .35; transition: opacity var(--fast);
+}
+.scope-chip.on { color: var(--txt2); border-color: var(--line2); background: var(--panel2); }
+.scope-chip.on > i { opacity: 1; box-shadow: 0 0 0 2px color-mix(in srgb, var(--chip) 22%, transparent); }
+.scope-chip:hover { color: var(--txt); border-color: var(--brand); }
+.scope-chip.bad { border-style: dashed; border-color: var(--danger); color: var(--danger); }
+.scope-chip.bad > i { background: var(--danger); }
+.scope-none { font-size: 10.5px; color: var(--txt3); opacity: .8; }
+.scope-warn { font-size: 10.5px; color: var(--danger); }
+
+/* 预览音量滑块：细、贴手、跟主题走 */
+.vol-slider {
+  width: 72px; height: 3px; flex: none; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  background: var(--line2); border-radius: 2px; outline: none;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--panel); border: 2px solid var(--brand);
+  box-shadow: 0 1px 3px rgba(11, 60, 140, .28); cursor: pointer;
+  transition: transform var(--fast) var(--ease);
+}
+.vol-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+
+/* 拖文件进窗口的落点提示 */
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 130; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(31, 111, 235, .10); backdrop-filter: blur(2px);
+  animation: fade .12s var(--ease) both;
+}
+.drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  padding: 26px 40px; border-radius: 16px;
+  border: 2px dashed var(--brand); background: var(--panel);
+  box-shadow: var(--shadow-3); color: var(--brand);
+}
+.drop-card b { font-size: 15px; letter-spacing: .5px; }
+.drop-card span { font-size: 12px; color: var(--txt3); font-weight: 400; }
 .preview-controls {
   height: 46px; display: flex; align-items: center; gap: 4px; padding: 0 12px;
   border-top: 1px solid var(--line); background: var(--panel); flex: none;

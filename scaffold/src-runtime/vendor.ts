@@ -369,6 +369,16 @@ type AudioSlot = {
 const audioSlots = new Map<string, AudioSlot>();
 let audioSeq = 0;
 let playingFlag = false;
+/** 主音量（预览总音量，不改用户代码里写的 volume） */
+let masterVolume = 1;
+
+export function setMasterVolume(v: number): void {
+  masterVolume = Math.max(0, Math.min(1, Number(v) || 0));
+  for (const s of audioSlots.values()) {
+    const own = Number((s.el as any).__own ?? 1);
+    try { s.el.volume = Math.max(0, Math.min(1, own * masterVolume)); } catch { /* 元素已销毁 */ }
+  }
+}
 
 /** 与当前帧对齐所有音频。force=用户主动跳转，必须硬 seek；否则播放中只纠大漂移。 */
 function syncAudio(frame: number, force: boolean): void {
@@ -461,7 +471,9 @@ export function Audio(props: {
     slot.startFrom = props.startFrom ?? 0;
     slot.rate = rate;
     const v = props.muted ? 0 : Math.max(0, Math.min(1, props.volume ?? 1));
-    if (Math.abs(slot.el.volume - v) > 0.004) slot.el.volume = v;
+    (slot.el as any).__own = v;
+    const eff = v * masterVolume;
+    if (Math.abs(slot.el.volume - eff) > 0.004) slot.el.volume = eff;
     if (slot.el.playbackRate !== rate) slot.el.playbackRate = rate;
   }
   return null;
@@ -527,6 +539,7 @@ export function init(opts: { compId?: string | null }): void {
     try { syncAudio(target, !playingFlag); } catch { /* 音频未就绪不影响画面 */ }
   };
   (window as any).__setPlaying = (p: boolean): void => setPlaying(p);
+  (window as any).__setMasterVolume = (v: number): void => setMasterVolume(v);
   (window as any).__collectAudio = (): any => collectAudio();
   (window as any).__audioVolumes = (): number[] => audioVolumes();
   (window as any).__media = MEDIA;
@@ -545,6 +558,6 @@ const KR = {
   interpolate, spring, Easing, random, noise1D,
   useFrame, useCurrentFrame, useVideoConfig,
   Sequence, Series, Freeze, AbsoluteFill, init, currentCompId,
-  Audio, staticFile, setPlaying, collectAudio, audioVolumes
+  Audio, staticFile, setPlaying, collectAudio, audioVolumes, setMasterVolume
 };
 (window as any).KR = KR;

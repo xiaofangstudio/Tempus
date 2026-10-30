@@ -44,6 +44,7 @@
 | 🌙 **暗色模式** | 只覆盖 CSS 变量、组件零改；Monaco 配 `tempus-dark` 主题，canvas 时间轴改成双色板，暗色下不再是一整块白 |
 | 📦 **第三方 npm 包能 import** | 按 Node 规则逐级找 `node_modules`，读 `module`/`browser`/`main`——把包装进工程目录就能用 |
 | 📚 **技能库 7 → 12** | 重写 `tempus-api`，新增 `remotion-parity`（Remotion→Tempus 对照表 + 踩坑）、`lower-thirds`、`data-viz`、`three-d-scene`、`audio` |
+| 🛠️ **又补了一轮打磨** | 音频示波器与画面预览继续优化、工作台三者联动增强、新图标与样式打磨，`audio.md` 技能同步更新 |
 
 一句话：**从「能跑」变成「真能干活」。**
 

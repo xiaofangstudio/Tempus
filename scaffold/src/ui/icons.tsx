@@ -177,3 +177,20 @@ export const IconFilm = ({ size, style }: P) => (
     <rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M7 5v14M17 5v14M2.5 12h19" />
   </svg>
 );
+export const IconVolume = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18 6a8 8 0 0 1 0 12" />
+  </svg>
+);
+export const IconVolumeMute = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" />
+    <path d="M16 9.5l5 5M21 9.5l-5 5" />
+  </svg>
+);
+export const IconUpload = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <path d="M12 16V4M7.5 8.5L12 4l4.5 4.5" /><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" />
+  </svg>
+);
