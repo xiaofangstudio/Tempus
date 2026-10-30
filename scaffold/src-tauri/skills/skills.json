@@ -1,0 +1,64 @@
+{
+  "skills": [
+    {
+      "name": "音频：用写代码的方式做声音",
+      "file": "audio.md",
+      "desc": "Audio 组件的全部参数、逐帧音量包络（淡入淡出/打击感/自动闪避）、多轨混音、预览与离线混音的差异，以及三条纪律。"
+    },
+    {
+      "name": "Tempus 运行时 API",
+      "file": "tempus-api.md",
+      "desc": "useFrame / interpolate / spring / Sequence 全部 API 与确定性渲染守则，写代码前必读。"
+    },
+    {
+      "name": "Remotion → Tempus 迁移对照",
+      "file": "remotion-parity.md",
+      "desc": "搬 Remotion 代码必读：可直接用的 API、运行时没有的写法与替代方案、搬运清单与两个高频坑。"
+    },
+    {
+      "name": "Motion Studio 总控",
+      "file": "motion-studio.md",
+      "desc": "全融合动画与宣传片生成链：意图理解、任务路由、九大增强、统一工作流。"
+    },
+    {
+      "name": "逐帧手绘动画（painted-animation）",
+      "file": "painted-animation.md",
+      "desc": "手绘水彩质感逐帧动画方法论：分镜、节拍、reads、转场、渲染检视循环。"
+    },
+    {
+      "name": "动感条（kinetic-reel）",
+      "file": "kinetic-reel.md",
+      "desc": "大字报动感条与 showreel 方法论：类型为王、节拍锁定、连续形变转场。"
+    },
+    {
+      "name": "宣传片一镜（onetake）",
+      "file": "onetake.md",
+      "desc": "产品宣传片方法论：节拍衔接而非替换、参考解构、运镜跟拍、验收神谕。"
+    },
+    {
+      "name": "导演级 2D 动画（director-grade）",
+      "file": "director-grade.md",
+      "desc": "导演纪律门禁：spec 先行、角色锁定、配色弧线、切镜动机、音画同表。"
+    },
+    {
+      "name": "液态玻璃（liquid-glass）",
+      "file": "liquid-glass.md",
+      "desc": "Web 液态玻璃质感实现：折射位移、高光边缘、动态形变，含可直接粘贴的代码。"
+    },
+    {
+      "name": "字幕条 / 信息条（lower-thirds）",
+      "file": "lower-thirds.md",
+      "desc": "信息版式方法论：分层入场、停留呼吸、退场干净，含可直接粘贴的组件与 Series 多段编排。"
+    },
+    {
+      "name": "数据动效（data-viz）",
+      "file": "data-viz.md",
+      "desc": "数字滚动、条形图、环形进度、折线生长：节奏表 + 可直接粘贴的图表组件。"
+    },
+    {
+      "name": "Three.js 场景（three-d-scene）",
+      "file": "three-d-scene.md",
+      "desc": "确定性 3D：preserveDrawingBuffer、useLayoutEffect 同步绘制、粒子场与运镜，含导出全黑排查表。"
+    }
+  ]
+}

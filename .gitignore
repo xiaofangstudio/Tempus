@@ -1,0 +1,15 @@
+# ===== 构建产物 / 二进制（走 Releases，不进仓库）=====
+Tempus.exe
+ffmpeg/
+*.lnk
+*.msi
+*.zip
+*.nsis.zip
+
+# ===== 本地 / 工具目录（不入库）=====
+.workbuddy/
+.shots/
+.icon-in-exe.png
+_build.log
+
+# ===== 说明：scaffold/.gitignore 已负责 node_modules / dist / src-tauri/target / src-tauri/gen =====
