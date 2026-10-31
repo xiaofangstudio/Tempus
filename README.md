@@ -45,6 +45,7 @@
 | 📦 **第三方 npm 包能 import** | 按 Node 规则逐级找 `node_modules`，读 `module`/`browser`/`main`——把包装进工程目录就能用 |
 | 📚 **技能库 7 → 12** | 重写 `tempus-api`，新增 `remotion-parity`（Remotion→Tempus 对照表 + 踩坑）、`lower-thirds`、`data-viz`、`three-d-scene`、`audio` |
 | 🛠️ **又补了一轮打磨** | 音频示波器与画面预览继续优化、工作台三者联动增强、新图标与样式打磨，`audio.md` 技能同步更新；工作台支持拖拽分屏（新增 `Splitter`），帧选取器抽成 `frame.ts` 重构，新建模板体系重写 |
+| 🧪 **模板自检脚本** | 新增 `scripts/check-templates.mjs` + `npm run check:templates`——模板改完一键回归；新建文件逻辑抽成独立 `newfile.ts` 模块 |
 
 一句话：**从「能跑」变成「真能干活」。**
 

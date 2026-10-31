@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build:render": "vite build --config vite.render.config.ts",
-    "build": "npm run build:render && tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+  "build": "npm run build:render && tsc --noEmit && vite build",
+  "typecheck": "tsc --noEmit",
+  "check:templates": "node scripts/run-check.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

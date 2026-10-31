@@ -346,7 +346,7 @@ fn tool_call(app: &tauri::AppHandle, state: &tauri::State<AppState>, msg: &Value
             }
             let res = ask_frontend(
                 app, state, "create_file",
-                json!({ "path": rel, "kind": kind }), 30,
+                json!({ "path": rel, "kind": kind }), 12,
             )?;
             Ok(res.to_string())
         }
@@ -405,7 +405,7 @@ fn tool_call(app: &tauri::AppHandle, state: &tauri::State<AppState>, msg: &Value
             if !["light", "dark", "toggle"].contains(&t) {
                 return Err("theme 只能是 light / dark / toggle".into());
             }
-            let res = ask_frontend(app, state, "set_theme", json!({ "theme": t }), 15)?;
+            let res = ask_frontend(app, state, "set_theme", json!({ "theme": t }), 8)?;
             Ok(res.to_string())
         }
 

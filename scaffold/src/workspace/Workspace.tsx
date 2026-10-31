@@ -14,6 +14,7 @@ import { Sequencer } from './Sequencer';
 import { MenuBar, type MenuGroup } from '../ide/MenuBar';
 import { askText, askAlert } from '../ui/dialog';
 import { FramePicker } from '../ui/FramePicker';
+import { buildVisualFile, buildAudioFile, compIdFromPath } from '../core/newfile';
 import { Splitter, remember } from '../ui/Splitter';
 import { PreviewPane, type PreviewHandle } from './PreviewPane';
 import { Timeline } from './Timeline';
@@ -522,75 +523,12 @@ export function Workspace({ projectDir, onExit }: Props) {
     const h = meta?.height ?? 1080;
     const fps = meta?.fps ?? 30;
 
-    const visualTpl = `import React from 'react';
-import { AbsoluteFill, Easing, interpolate, registerComposition, useFrame, useVideoConfig } from 'tempus';
-
-/* 画面文件：返回值就是这一帧要画的东西。
- * 每一帧都是 frame 的纯函数（不用 Math.random / Date.now），导出才可复现。 */
-
-function Scene() {
-  const frame = useFrame();
-  const { durationInFrames } = useVideoConfig();
-  const o = interpolate(frame, [0, 24], [0, 1], {
-    extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic)
-  });
-  const out = interpolate(frame, [durationInFrames - 18, durationInFrames], [1, 0], {
-    extrapolateLeft: 'clamp'
-  });
-
-  return (
-    <AbsoluteFill style={{
-      background: '#081427', alignItems: 'center', justifyContent: 'center',
-      fontFamily: '"Microsoft YaHei", system-ui, sans-serif'
-    }}>
-      <div style={{ opacity: o * out, color: '#eaf2ff', fontSize: 72, fontWeight: 800, letterSpacing: 4 }}>
-        Hello Tempus
-      </div>
-    </AbsoluteFill>
-  );
-}
-
-registerComposition({
-  id: '${withExt.replace(/^.*\//, '').replace(/\.[a-z0-9]+$/i, '')}',
-  width: ${w},
-  height: ${h},
-  fps: ${fps},
-  durationInFrames: 120,
-  component: Scene
-});
-`;
-
-    const audioTpl = `import { Audio, interpolate, useFrame, useVideoConfig } from 'tempus';
-
-/* 音频文件：不画任何东西，只把声音铺在时间线上。
- * 在画面文件里 import 它并放进 JSX 即可：
- *     import Sound from './audio/背景音乐';
- *     <AbsoluteFill> ... <Sound /> </AbsoluteFill>
- *
- * volume 每帧求值 —— 下面两行就是真实的淡入 / 淡出。 */
-
-export default function Sound() {
-  const frame = useFrame();
-  const { fps, durationInFrames } = useVideoConfig();
-
-  const fadeIn = interpolate(frame, [0, fps], [0, 1], { extrapolateRight: 'clamp' });
-  const fadeOut = interpolate(frame, [durationInFrames - fps, durationInFrames], [1, 0], {
-    extrapolateLeft: 'clamp'
-  });
-
-  return (
-    <Audio
-      src="assets/bgm.mp3"
-      volume={Math.min(fadeIn, fadeOut)}
-      startFrom={0}
-    />
-  );
-}
-`;
+    const src = kind === 'visual'
+      ? buildVisualFile({ width: w, height: h, fps, id: compIdFromPath(withExt) })
+      : buildAudioFile();
 
     try {
-      await api.fsWrite(full, kind === 'visual' ? visualTpl : audioTpl);
+      await api.fsWrite(full, src);
       bus.current.refreshTree?.();
       await bus.current.editor?.openFile(full);
       setToast(`已创建 ${withExt}`);
@@ -624,12 +562,15 @@ export default function Sound() {
               ? (cur === 'dark' ? 'light' : 'dark')
               : (args.theme === 'dark' ? 'dark' : 'light');
             setThemeNow(next);
+            setToast(`AI 把主题切成了${next === 'dark' ? '暗色' : '浅色'}`);
             res = { ok: true, theme: next, previous: cur };
           } else {
+            setToast(`AI 发来一个不认识的请求：${kind}`);
             res = { ok: false, error: `前端不认识这个请求：${kind}` };
           }
           await api.mcpRespond(reqId, JSON.stringify(res));
         } catch (err) {
+          setToast('AI 的这次操作失败了，详见错误条');
           await api.mcpRespond(reqId, JSON.stringify({ ok: false, error: String(err) })).catch(() => {});
         }
       })();

@@ -150,9 +150,12 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
   const rawScale = mode === 'fit' ? Math.max(0.02, fitScale) : mode === 'actual' ? 1 : manual;
   const scale = rawScale;
   const pct = Math.round(scale * 100);
+  /* comp 还没到时也要有真实尺寸，否则外框 0×0、画面直接不显示 */
+  const cw = comp?.width ?? 1280;
+  const ch = comp?.height ?? 720;
   /* 标签上把"真实像素"摆出来：所见即所得，不再让人猜缩放了多少 */
-  const shownW = comp ? Math.round(comp.width * scale) : 0;
-  const shownH = comp ? Math.round(comp.height * scale) : 0;
+  const shownW = Math.round(cw * scale);
+  const shownH = Math.round(ch * scale);
   const zoomTitle = comp
     ? `画幅 ${comp.width}×${comp.height}（${ratioLabel(comp.width, comp.height)}）· 当前显示 ${shownW}×${shownH}\n点击标签回到「适应窗口」，点 100% 看真实像素`
     : '缩放';
@@ -202,7 +205,7 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
            * 布局盒永远等于画幅尺寸，滚动与"实际多大"都对不上。 */
           ? <div className="pv-frame" style={{ width: shownW, height: shownH }}>
               <iframe ref={iframeRef} title="预览" style={{
-                width: comp?.width ?? 1280, height: comp?.height ?? 720,
+                width: cw, height: ch,
                 border: 'none', background: '#000',
                 transform: `scale(${scale})`, transformOrigin: 'top left',
                 outline: 'none'
