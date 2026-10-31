@@ -199,6 +199,57 @@ fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
     Ok(p)
 }
 
+/* ---------- 前端请求桥 ----------
+ * create_file（模板在前端）、set_theme（存在 localStorage）只有前端能做。
+ * 后端发 mcp-request，等前端 mcp_respond；超时就如实报错，不假装成功。 */
+fn ask_frontend(
+    app: &tauri::AppHandle,
+    state: &tauri::State<AppState>,
+    kind: &str,
+    args: Value,
+    secs: u64,
+) -> Result<Value, String> {
+    let id = state.mcp_seq.fetch_add(1, Ordering::SeqCst) + 1;
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    state
+        .mcp_pending
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(id, tx);
+
+    let ok = app
+        .emit("mcp-request", json!({ "reqId": id, "kind": kind, "args": args }))
+        .is_ok();
+    if !ok {
+        state.mcp_pending.lock().map_err(|e| e.to_string())?.remove(&id);
+        return Err("应用窗口不可用，无法执行（请先在 Tempus 里打开工程）".into());
+    }
+
+    let got = rx.recv_timeout(std::time::Duration::from_secs(secs));
+    state.mcp_pending.lock().map_err(|e| e.to_string())?.remove(&id);
+    match got {
+        Ok(s) => serde_json::from_str::<Value>(&s)
+            .map_err(|e| format!("前端返回的不是 JSON：{}", e)),
+        Err(_) => Err(format!("等待应用响应超时（{} 秒）—— 工程窗口可能没打开", secs)),
+    }
+}
+
+/* 画幅预设（与前端 core/frame.ts 保持一致；ffmpeg 要求偶数边长） */
+fn presets() -> Vec<(&'static str, u32, u32)> {
+    vec![
+        ("16:9", 1920, 1080),
+        ("9:16", 1080, 1920),
+        ("1:1", 1080, 1080),
+        ("4:5", 1080, 1350),
+        ("2.39:1", 1920, 804),
+        ("4:3", 1440, 1080),
+    ]
+}
+
+fn even(n: u32) -> u32 {
+    if n % 2 == 0 { n } else { n + 1 }
+}
+
 fn tool_call(app: &tauri::AppHandle, state: &tauri::State<AppState>, msg: &Value) -> Result<String, String> {
     let name = msg.pointer("/params/name").and_then(|n| n.as_str()).ok_or("缺少 tools/call name")?;
     let args = msg.pointer("/params/arguments").cloned().unwrap_or(json!({}));
@@ -285,6 +336,152 @@ fn tool_call(app: &tauri::AppHandle, state: &tauri::State<AppState>, msg: &Value
             let text = crate::commands::skills::read_by_file(file)?;
             Ok(text)
         }
+
+        /* ---- 新建文件：模板在前端，走请求桥 ---- */
+        "create_file" => {
+            let rel = args.get("path").and_then(|p| p.as_str()).ok_or("缺少 path")?;
+            let kind = args.get("kind").and_then(|k| k.as_str()).unwrap_or("visual");
+            if kind != "visual" && kind != "audio" {
+                return Err("kind 只能是 visual（画面）或 audio（音频）".into());
+            }
+            let res = ask_frontend(
+                app, state, "create_file",
+                json!({ "path": rel, "kind": kind }), 30,
+            )?;
+            Ok(res.to_string())
+        }
+
+        /* ---- 画幅：project.json 后端直接写，UI 用事件同步 ---- */
+        "set_frame" => {
+            let mut w = args.get("width").and_then(|v| v.as_u64()).map(|v| v as u32);
+            let mut h = args.get("height").and_then(|v| v.as_u64()).map(|v| v as u32);
+            let preset = args.get("preset").and_then(|v| v.as_str());
+            let mut frame_id: Option<String> = None;
+            if let Some(p) = preset {
+                let hit = presets().into_iter().find(|(id, _, _)| *id == p);
+                match hit {
+                    Some((id, pw, ph)) => { w = Some(pw); h = Some(ph); frame_id = Some(id.to_string()); }
+                    None => return Err(format!("未知画幅预设 {}（可用：{}）", p,
+                        presets().iter().map(|(i, _, _)| *i).collect::<Vec<_>>().join(", "))),
+                }
+            }
+            let w = w.ok_or("缺少 width/height 或 preset")?;
+            let h = h.ok_or("缺少 width/height 或 preset")?;
+            if !(16..=7680).contains(&w) || !(16..=7680).contains(&h) {
+                return Err("宽高需在 16 ~ 7680 之间".into());
+            }
+            let w = even(w);
+            let h = even(h);
+
+            let p = root.join("project.json");
+            let raw = std::fs::read_to_string(&p).map_err(|e| format!("读取 project.json 失败：{}", e))?;
+            let mut meta: Value = serde_json::from_str(&raw).map_err(|e| format!("project.json 不是合法 JSON：{}", e))?;
+            let fps_out = {
+                let obj = meta.as_object_mut().ok_or("project.json 不是对象")?;
+                obj.insert("width".into(), json!(w));
+                obj.insert("height".into(), json!(h));
+                obj.insert("frame".into(), json!(frame_id.clone().unwrap_or_else(|| format!("{}x{}", w, h))));
+                if let Some(fps) = args.get("fps").and_then(|v| v.as_u64()) {
+                    if (1..=120).contains(&fps) { obj.insert("fps".into(), json!(fps as u32)); }
+                }
+                obj.get("fps").cloned().unwrap_or(json!(30))
+            };
+            std::fs::write(&p, serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?)
+                .map_err(|e| format!("写入 project.json 失败：{}", e))?;
+            /* 通知界面刷新（meta 变了，新建文件的模板尺寸也跟着变） */
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.emit("mcp-frame-changed", json!({ "width": w, "height": h }));
+            }
+            Ok(json!({
+                "ok": true, "width": w, "height": h, "fps": fps_out,
+                "frame": frame_id.clone().unwrap_or_else(|| format!("{}x{}", w, h)),
+                "note": "已写入 project.json。已有合成里写死的 width/height 不会被改，新建文件与导出会用新画幅。"
+            }).to_string())
+        }
+
+        /* ---- 主题：存在前端 localStorage，走请求桥 ---- */
+        "set_theme" => {
+            let t = args.get("theme").and_then(|v| v.as_str()).unwrap_or("toggle");
+            if !["light", "dark", "toggle"].contains(&t) {
+                return Err("theme 只能是 light / dark / toggle".into());
+            }
+            let res = ask_frontend(app, state, "set_theme", json!({ "theme": t }), 15)?;
+            Ok(res.to_string())
+        }
+
+        /* ---- 多段合并渲染：按给定顺序逐段渲染再拼接（等价界面里的「序列器」） ---- */
+        "sequencer_render" => {
+            let ids = args.get("comp_ids").and_then(|v| v.as_array()).ok_or("缺少 comp_ids（数组，顺序即播放顺序）")?;
+            let ids: Vec<String> = ids.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            if ids.is_empty() {
+                return Err("comp_ids 不能为空".into());
+            }
+            let crf = args.get("crf").and_then(|c| c.as_u64()).unwrap_or(20) as u32;
+            let parallel = args.get("parallel").and_then(|c| c.as_u64()).map(|v| v as u32);
+            let audio = args.get("audio_path").and_then(|a| a.as_str()).map(String::from)
+                .filter(|s| !s.trim().is_empty());
+
+            let state_docs = state.docs.lock().map_err(|e| e.to_string())?;
+            let comps = state.comps.lock().map_err(|e| e.to_string())?;
+            let picked: Vec<(String, crate::commands::render::Comp, String)> = ids
+                .iter()
+                .map(|id| {
+                    let c = comps.iter().find(|c| &c.id == id)
+                        .ok_or_else(|| format!("合成 {} 不存在或尚未编译", id))?;
+                    let d = state_docs.get(id)
+                        .ok_or_else(|| format!("合成 {} 尚未编译（请在应用里打开工程并编译一次）", id))?;
+                    Ok((id.clone(), crate::commands::render::Comp {
+                        id: c.id.clone(), width: c.width, height: c.height,
+                        fps: c.fps, duration_in_frames: c.durationInFrames,
+                    }, d.clone()))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            drop(state_docs);
+            drop(comps);
+
+            let out_dir = PathBuf::from(&root).join("out");
+            std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let out_path = args.get("out_path").and_then(|o| o.as_str()).map(String::from)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| out_dir.join(format!("sequence-{}.mp4", stamp)).to_string_lossy().to_string());
+
+            let mut segs: Vec<String> = Vec::new();
+            let mut total_frames = 0u32;
+            for (i, (id, comp, doc)) in picked.iter().enumerate() {
+                let seg = out_dir.join(format!(".seq-{}.mp4", i)).to_string_lossy().to_string();
+                let req = crate::commands::render::RenderReq {
+                    html: doc.clone(),
+                    comp: comp.clone(),
+                    out_path: seg.clone(),
+                    crf,
+                    project_dir: root.to_string_lossy().to_string(),
+                    audio_path: None,       // 音频统一在最后 concat 时混一次
+                    parallel,
+                    range: None,
+                };
+                crate::commands::render::render_export_sync(app.clone(), req)
+                    .map_err(|e| format!("第 {} 段（{}）渲染失败：{}", i + 1, id, e))?;
+                total_frames += comp.duration_in_frames;
+                segs.push(seg);
+            }
+
+            crate::commands::render::video_concat(segs.clone(), out_path.clone(), audio.clone())
+                .map_err(|e| format!("拼接失败：{}", e))?;
+
+            Ok(json!({
+                "ok": true,
+                "out_path": out_path,
+                "segments": ids,
+                "segment_files": segs,
+                "total_frames": total_frames,
+                "audio": audio
+            }).to_string())
+        }
+
         other => Err(format!("未知工具：{}", other)),
     }
 }
@@ -315,7 +512,11 @@ const TOOLS: &str = r#"[
   { "name": "get_compositions", "description": "列出全部合成（尺寸/帧率/时长）与标记", "inputSchema": { "type": "object", "properties": {} } },
   { "name": "render_video", "description": "渲染导出 MP4（阻塞直到完成）。comp_id 必填；out_path 可选（默认 工程/out/<id>.mp4）；crf 默认 20", "inputSchema": { "type": "object", "properties": { "comp_id": { "type": "string" }, "out_path": { "type": "string" }, "crf": { "type": "number" } }, "required": ["comp_id"] } },
   { "name": "list_skills", "description": "列出内置技能（动效方法论库）", "inputSchema": { "type": "object", "properties": {} } },
-  { "name": "read_skill", "description": "读取指定技能全文（file 用 list_skills 返回的 file 字段）", "inputSchema": { "type": "object", "properties": { "file": { "type": "string" } }, "required": ["file"] } }
+  { "name": "read_skill", "description": "读取指定技能全文（file 用 list_skills 返回的 file 字段）", "inputSchema": { "type": "object", "properties": { "file": { "type": "string" } }, "required": ["file"] } },
+  { "name": "create_file", "description": "按内置模板新建文件（与应用里「新建文件」同一套模板，会自动带上工程画幅与帧率）。kind: visual=画面文件（registerComposition 骨架）/ audio=音频文件（Audio + 淡入淡出）；path 为工程内相对路径，如 src/scenes/Title.tsx", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "kind": { "type": "string", "enum": ["visual", "audio"] } }, "required": ["path"] } },
+  { "name": "set_frame", "description": "设置工程画幅（写入 project.json）。可以传 preset（16:9 / 9:16 / 1:1 / 4:5 / 2.39:1 / 4:3），也可以传 width+height（自动取偶数），fps 可选。已有合成里写死的 width/height 不会被改。", "inputSchema": { "type": "object", "properties": { "preset": { "type": "string" }, "width": { "type": "number" }, "height": { "type": "number" }, "fps": { "type": "number" } } } },
+  { "name": "set_theme", "description": "切换界面主题（浅色 / 暗色）。theme: light / dark / toggle（默认 toggle）", "inputSchema": { "type": "object", "properties": { "theme": { "type": "string", "enum": ["light", "dark", "toggle"] } } } },
+  { "name": "sequencer_render", "description": "多段合并渲染（等价界面里的「序列器」）：按 comp_ids 给定顺序逐段渲染再拼接成一条成片。out_path 可选（默认 工程/out/sequence-<时间戳>.mp4）；crf 默认 20；parallel 为并行路数（1~8）；audio_path 可选，整条铺满。阻塞直到完成。", "inputSchema": { "type": "object", "properties": { "comp_ids": { "type": "array", "items": { "type": "string" } }, "out_path": { "type": "string" }, "crf": { "type": "number" }, "parallel": { "type": "number" }, "audio_path": { "type": "string" } }, "required": ["comp_ids"] } }
 ]"#;
 
 #[tauri::command]

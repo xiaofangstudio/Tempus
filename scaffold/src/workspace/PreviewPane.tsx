@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import type { CompInfo } from '../core/types';
+import { ratioLabel } from '../core/frame';
 import { AudioScope, type ScopeFile } from './AudioScope';
 import { IconPlay, IconPause, IconLoop, IconStepBack, IconStepFwd, IconPrev, IconNext, IconZoomIn, IconZoomOut, IconFit, IconFocus, IconClose, IconVolume, IconVolumeMute } from '../ui/icons';
 
@@ -43,7 +44,8 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
-  const [mode, setMode] = useState<'fit' | 'manual'>('fit');
+  /* fit = 适应窗口；actual = 100% 实际像素（1920 宽就是屏幕上 1920 个像素点）；manual = 手动缩放 */
+  const [mode, setMode] = useState<'fit' | 'manual' | 'actual'>('fit');
   const [manual, setManual] = useState(1);
   const [focus, setFocus] = useState(false);
   const srcDocRef = useRef(srcDoc);
@@ -144,10 +146,19 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
   const fitScale = comp && stageSize.w > 0
     ? Math.min((stageSize.w - pad) / comp.width, (stageSize.h - pad) / comp.height, 1.5)
     : 1;
-  const scale = mode === 'fit' ? Math.max(0.02, fitScale) : manual;
+  /* 等比这条不能破：宽高用同一个 scale，画面永远不被拉扁 */
+  const rawScale = mode === 'fit' ? Math.max(0.02, fitScale) : mode === 'actual' ? 1 : manual;
+  const scale = rawScale;
+  const pct = Math.round(scale * 100);
+  /* 标签上把"真实像素"摆出来：所见即所得，不再让人猜缩放了多少 */
+  const shownW = comp ? Math.round(comp.width * scale) : 0;
+  const shownH = comp ? Math.round(comp.height * scale) : 0;
+  const zoomTitle = comp
+    ? `画幅 ${comp.width}×${comp.height}（${ratioLabel(comp.width, comp.height)}）· 当前显示 ${shownW}×${shownH}\n点击标签回到「适应窗口」，点 100% 看真实像素`
+    : '缩放';
 
   const zoomStep = (dir: 1 | -1): void => {
-    const cur = mode === 'fit' ? fitScale : manual;
+    const cur = mode === 'fit' ? fitScale : mode === 'actual' ? 1 : manual;
     const next = Math.min(4, Math.max(0.05, Math.round(cur * (dir > 0 ? 1.2 : 1 / 1.2) * 100) / 100));
     setManual(next);
     setMode('manual');
@@ -165,7 +176,7 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const st = zoomRef.current;
-      const cur = st.mode === 'fit' ? st.fit : st.manual;
+      const cur = st.mode === 'fit' ? st.fit : st.mode === 'actual' ? 1 : st.manual;
       const dir = e.deltaY < 0 ? 1 : -1;
       const next = Math.min(4, Math.max(0.05,
         Math.round(cur * (dir > 0 ? 1.12 : 1 / 1.12) * 100) / 100));
@@ -186,12 +197,17 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
     <div className={`preview-wrap ${focus ? 'focus' : ''}`}>
       <div className="preview-stage" ref={stageRef}>
         {srcDoc
-          ? <iframe ref={iframeRef} title="预览" style={{
-              width: comp?.width ?? 1280, height: comp?.height ?? 720,
-              border: 'none', background: '#000',
-              transform: `scale(${scale})`, transformOrigin: 'center',
-              outline: 'none'
-            }} srcDoc={srcDoc} sandbox="allow-scripts allow-same-origin" />
+          /* 外层盒子的尺寸 = 缩放后的真实显示尺寸，iframe 用 top-left 原点缩放进去。
+           * 这样 100% 档下布局尺寸就是真实像素，溢出时滚动条也准 —— 之前 iframe 的
+           * 布局盒永远等于画幅尺寸，滚动与"实际多大"都对不上。 */
+          ? <div className="pv-frame" style={{ width: shownW, height: shownH }}>
+              <iframe ref={iframeRef} title="预览" style={{
+                width: comp?.width ?? 1280, height: comp?.height ?? 720,
+                border: 'none', background: '#000',
+                transform: `scale(${scale})`, transformOrigin: 'top left',
+                outline: 'none'
+              }} srcDoc={srcDoc} sandbox="allow-scripts allow-same-origin" />
+            </div>
           : <div className="preview-empty">
               <IconPlay size={30} />
               <span>编译完成后在此预览</span>
@@ -212,10 +228,16 @@ export const PreviewPane = forwardRef<PreviewHandle, Props>(function PreviewPane
         {btn(<IconLoop size={15} />, loop, '循环播放', onToggleLoop, 'loop')}
         <div className="vline" />
         {btn(<IconZoomOut size={15} />, false, '缩小', () => zoomStep(-1), 'zo')}
-        <span className="zoom-label" title="点击恢复适应窗口" style={{ cursor: 'pointer' }}
-          onClick={() => setMode('fit')}>{mode === 'fit' ? '适应' : `${Math.round(scale * 100)}%`}</span>
+        <span className="zoom-label" title={zoomTitle} style={{ cursor: 'pointer' }}
+          onClick={() => setMode('fit')}>{mode === 'fit' ? '适应' : `${pct}%`}</span>
         {btn(<IconZoomIn size={15} />, false, '放大', () => zoomStep(1), 'zi')}
         {btn(<IconFit size={14} />, mode === 'fit', '适应窗口', () => setMode('fit'), 'fit')}
+        <button
+          className={`zoom-actual ${mode === 'actual' ? 'active' : ''}`}
+          title="按实际像素 1:1 显示（1920 宽就是屏幕上 1920 个像素点）"
+          onClick={() => setMode('actual')}
+        >100%</button>
+        {comp && <span className="zoom-dim mono" title={zoomTitle}>{comp.width}×{comp.height} · {ratioLabel(comp.width, comp.height)}</span>}
         <div style={{ flex: 1 }} />
         {btn(<IconFocus size={14} />, focus, '专注模式（Esc 退出）', () => setFocus((v) => !v), 'focus')}
         <div className="vline" />

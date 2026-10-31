@@ -51,6 +51,8 @@ export const api = {
   mcpStart: (port: number, projectDir: string) => invoke<number>('mcp_start', { port, projectDir }),
   mcpStop: () => invoke<void>('mcp_stop'),
   mcpStatus: () => invoke<{ running: boolean; port: number }>('mcp_status'),
+  /** 回话：MCP 有些能力只有前端能做（模板、localStorage），做完用它把结果送回后端 */
+  mcpRespond: (id: number, payload: string) => invoke<void>('mcp_respond', { id, payload }),
   setCompositions: (comps: CompInfo[], marks: Mark[], docs: Record<string, string>, projectDir: string) =>
     invoke<void>('set_compositions', { args: { comps, marks, docs, projectDir } }),
 

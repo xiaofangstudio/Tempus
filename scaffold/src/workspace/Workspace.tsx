@@ -14,14 +14,16 @@ import { Sequencer } from './Sequencer';
 import { MenuBar, type MenuGroup } from '../ide/MenuBar';
 import { askText, askAlert } from '../ui/dialog';
 import { FramePicker } from '../ui/FramePicker';
+import { Splitter, remember } from '../ui/Splitter';
 import { PreviewPane, type PreviewHandle } from './PreviewPane';
 import { Timeline } from './Timeline';
 import { ExportDialog } from './ExportDialog';
 import { RightPanels } from './RightPanels';
 import {
-  Logo, IconBranch, IconExport, IconFile, IconRefresh, IconTerminal,
-  IconSearch, IconOutline, IconSettings, IconSave, IconUpload
+  Logo, IconBranch, IconExport, IconFile, IconRefresh, IconTerminal, IconPlus,
+  IconSearch, IconOutline, IconSettings, IconSave, IconUpload, IconSun, IconMoon
 } from '../ui/icons';
+import { loadSettings, saveSettings, onSettings, type Theme } from '../core/settings';
 
 /* 工作区编排：
  * 左侧活动栏（资源管理器 / 搜索 / 源代码管理 / 大纲 / 设置）+ 编辑器 → 增量编译 → 注入预览
@@ -49,6 +51,11 @@ const MemoGitPanel = React.memo(GitPanel);
 
 type Props = { projectDir: string; onExit: () => void };
 type SideTab = 'files' | 'search' | 'git' | 'outline' | 'settings';
+
+/* 布局尺寸的持久化句柄（模块级常量：放进组件里每次渲染都是新对象，会打爆 useEffect） */
+const MEM_RIGHT = remember('tempus.rightW');
+const MEM_RP = remember('tempus.rightPanelsW');
+const MEM_TL = remember('tempus.timelineH');
 
 function langOfReal(path: string): string {
   const p = path.toLowerCase();
@@ -87,6 +94,45 @@ export function Workspace({ projectDir, onExit }: Props) {
   const [dirtyCount, setDirtyCount] = useState(0);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [sideW, setSideW] = useState<number | null>(null);
+  /* 主题：顶栏一键切换是主入口（设置面板里那个太深，用户找不到） */
+  const [theme, setTheme] = useState<Theme>(() => loadSettings().theme);
+  useEffect(() => onSettings((s) => setTheme(s.theme)), []);
+  const setThemeNow = useCallback((t: Theme): void => {
+    setTheme(t);
+    saveSettings({ theme: t });
+  }, []);
+  const toggleTheme = useCallback((): void => {
+    setThemeNow(loadSettings().theme === 'dark' ? 'light' : 'dark');
+  }, [setThemeNow]);
+
+  /* ---- 布局尺寸：全部可拖，全部记忆 ----
+   * 用户原话"整个模块都是可以自由拖动的" —— 写死的 flex 比例必须让位。
+   * 没拖过的值保持 null（用 CSS 默认），拖过才变成固定像素并落盘。 */
+  const rightRef = useRef<HTMLDivElement>(null);
+  const rpRef = useRef<HTMLDivElement>(null);
+  const tlRef = useRef<HTMLDivElement>(null);
+  const [rightW, setRightW] = useState<number | null>(null);
+  const [rpW, setRpW] = useState<number | null>(null);
+  const [tlH, setTlH] = useState<number | null>(null);
+  const memRight = MEM_RIGHT;
+  const memRp = MEM_RP;
+  const memTl = MEM_TL;
+
+  useEffect(() => {
+    setRightW(memRight.load(360, 2400));
+    setRpW(memRp.load(180, 560));
+    setTlH(memTl.load(96, 460));
+  }, [memRight, memRp, memTl]);
+
+  /* 窗口变小后固定宽度不能把代码区挤到看不见 */
+  useEffect(() => {
+    const onR = (): void => {
+      const lim = Math.max(360, window.innerWidth - 440);
+      setRightW((w) => (w == null ? w : Math.min(w, lim)));
+    };
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
+  }, []);
   const [cursor, setCursor] = useState<{ line: number; col: number; sel: number } | null>(null);
   const [toast, setToast] = useState('');
   const [audioFiles, setAudioFiles] = useState<ScopeFile[]>([]);
@@ -412,6 +458,15 @@ export function Workspace({ projectDir, onExit }: Props) {
     return () => { un.then((f) => f()).catch(() => {}); };
   }, [projectDir, compileNow]);
 
+  /* MCP set_frame：后端改完 project.json 发事件，这里把界面刷成新画幅 */
+  useEffect(() => {
+    const un = listen<{ width: number; height: number }>('mcp-frame-changed', (p) => {
+      setMeta((m) => (m ? { ...m, width: p.width, height: p.height } : m));
+      setToast(`画幅已改为 ${p.width}×${p.height}`);
+    });
+    return () => { un.then((f) => f()).catch(() => {}); };
+  }, []);
+
   /* Git diff：按 kind 取基线与当前内容，喂给编辑器 diff 视图 */
   const openGitDiff = useCallback(async (rel: string, kind: 'worktree' | 'index'): Promise<void> => {
     const root = projectDir.replace(/[\\/]+$/, '');
@@ -458,7 +513,7 @@ export function Workspace({ projectDir, onExit }: Props) {
   /* 首次进入工程时先定画幅（写进 project.json 的 frame 字段后不再弹） */
   const [framePick, setFramePick] = useState(false);
 
-  const createFile = useCallback(async (kind: 'visual' | 'audio', name: string): Promise<void> => {
+  const createFile = useCallback(async (kind: 'visual' | 'audio', name: string): Promise<string> => {
     setNewFileOpen(false);
     const rel = name.replace(/\\/g, '/').replace(/^\/+/, '');
     const withExt = /\.[a-z0-9]+$/i.test(rel) ? rel : rel + '.tsx';
@@ -539,14 +594,48 @@ export default function Sound() {
       bus.current.refreshTree?.();
       await bus.current.editor?.openFile(full);
       setToast(`已创建 ${withExt}`);
+      return withExt;
     } catch (e) {
-      setToast('创建失败：' + String(e));
+      const msg = '创建失败：' + String(e);
+      setToast(msg);
+      throw new Error(msg);
     }
   }, [projectDir, meta]);
 
   const newFile = useCallback(async (): Promise<void> => {
     setNewFileOpen(true);
   }, []);
+
+  /* MCP 请求桥：create_file（模板在前端）、set_theme（存在 localStorage）
+   * 只有前端能做 —— 后端发事件等回话，这里处理完把结果送回去。 */
+  useEffect(() => {
+    const un = listen<{ reqId: number; kind: string; args: Record<string, string> }>('mcp-request', (p) => {
+      const { reqId, kind, args } = p;
+      void (async () => {
+        try {
+          let res: Record<string, unknown> = { ok: true };
+          if (kind === 'create_file') {
+            const k: 'visual' | 'audio' = args.kind === 'audio' ? 'audio' : 'visual';
+            const path = await createFile(k, args.path ?? 'untitled.tsx');
+            res = { ok: true, path, kind: k };
+          } else if (kind === 'set_theme') {
+            const cur = loadSettings().theme;
+            const next: Theme = args.theme === 'toggle'
+              ? (cur === 'dark' ? 'light' : 'dark')
+              : (args.theme === 'dark' ? 'dark' : 'light');
+            setThemeNow(next);
+            res = { ok: true, theme: next, previous: cur };
+          } else {
+            res = { ok: false, error: `前端不认识这个请求：${kind}` };
+          }
+          await api.mcpRespond(reqId, JSON.stringify(res));
+        } catch (err) {
+          await api.mcpRespond(reqId, JSON.stringify({ ok: false, error: String(err) })).catch(() => {});
+        }
+      })();
+    });
+    return () => { un.then((f) => f()).catch(() => {}); };
+  }, [createFile, setThemeNow]);
   const handleSearchChanged = useCallback(() => { void compileNow(); }, [compileNow]);
   const handleOpenDiff = useCallback((rel: string, kind: 'worktree' | 'index') => {
     void openGitDiff(rel, kind);
@@ -554,6 +643,9 @@ export default function Sound() {
 
   /* 命令面板 */
   const commands: Command[] = [
+    { id: 'newfile', title: '新建文件（画面 / 音频）', hint: 'Ctrl+N', run: () => void newFile() },
+    { id: 'theme', title: theme === 'dark' ? '切换为浅色主题' : '切换为暗色主题', hint: 'Ctrl+Shift+L', run: toggleTheme },
+    { id: 'frame', title: '画幅设置…', run: () => setFramePick(true) },
     { id: 'quickopen', title: '转到文件', hint: 'Ctrl+P', run: () => setQuickOpen(true) },
     { id: 'save', title: '保存全部文件', hint: 'Ctrl+S', run: saveAllNow },
     { id: 'compile', title: '编译并刷新预览', hint: 'Ctrl+R', run: () => void compileNow() },
@@ -585,6 +677,8 @@ export default function Sound() {
       if (e.ctrlKey && !e.shiftKey && e.code === 'Comma') { e.preventDefault(); setSideTab('settings'); return; }
       if (e.ctrlKey && e.shiftKey && e.code === 'KeyP') { e.preventDefault(); setQuickOpen(false); setPaletteOpen(true); return; }
       if (e.ctrlKey && !e.shiftKey && e.code === 'KeyN') { e.preventDefault(); void newFile(); return; }
+      /* 明暗切换：Ctrl+Shift+L（VSCode 里 L 常被占用，这里作为专用入口） */
+      if (e.ctrlKey && e.shiftKey && e.code === 'KeyL') { e.preventDefault(); toggleTheme(); return; }
 
       if (isField) {
         if (e.ctrlKey && e.code === 'KeyE') { e.preventDefault(); setExportOpen(true); }
@@ -599,7 +693,7 @@ export default function Sound() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [seek, compileNow, newFile]);
+  }, [seek, compileNow, newFile, toggleTheme]);
 
   const cur = comps.find((c) => c.id === activeComp) ?? comps[0] ?? null;
   const projName = meta?.name ?? projectDir.split(/[\\/]/).pop() ?? '工程';
@@ -668,6 +762,10 @@ export default function Sound() {
         { id: 'v-s1', sep: true },
         { id: 'term', label: '终端面板', hint: 'Ctrl+`', checked: termOpen, run: () => setTermOpen((v) => !v) },
         { id: 'v-s2', sep: true },
+        { id: 'v-theme', label: '主题：暗色', hint: 'Ctrl+Shift+L', checked: theme === 'dark', run: () => setThemeNow('dark') },
+        { id: 'v-light', label: '主题：浅色', checked: theme === 'light', run: () => setThemeNow('light') },
+        { id: 'v-frame', label: '画幅设置…', run: () => setFramePick(true) },
+        { id: 'v-s3', sep: true },
         { id: 'settings', label: '设置', hint: 'Ctrl+,', checked: sideTab === 'settings', run: () => setSideTab('settings') }
       ]
     },
@@ -714,6 +812,9 @@ export default function Sound() {
               '  Ctrl+Shift+F     工程内搜索        Ctrl+G          转到行',
               '  Ctrl+N           新建文件',
               '',
+              '外观',
+              '  Ctrl+Shift+L     浅色 / 暗色切换',
+              '',
               '预览与运行',
               '  Ctrl+R           编译并刷新预览    Space           播放 / 暂停',
               '  ← / →            上一帧 / 下一帧   Ctrl+滚轮       缩放预览',
@@ -746,6 +847,11 @@ export default function Sound() {
         <span className="tb-sep" />
 
         <div className="ws-actions">
+          {/* 新建文件：Ctrl+N 记不住，给一个能点的加号（首选入口） */}
+          <button className="icon-btn tb accent" title="新建文件（Ctrl+N）" onClick={() => void newFile()}>
+            <IconPlus size={15} />
+          </button>
+          <span className="tb-sep" />
           <button className="icon-btn tb" title="保存全部（Ctrl+S）" onClick={saveAllNow}>
             <IconSave size={15} />
           </button>
@@ -771,6 +877,13 @@ export default function Sound() {
             <IconTerminal size={15} />
           </button>
           <span className="tb-sep" />
+          <button
+            className="icon-btn tb"
+            title={theme === 'dark' ? '切换到浅色主题（Ctrl+Shift+L）' : '切换到暗色主题（Ctrl+Shift+L）'}
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
+          </button>
           <button className="btn ghost small" onClick={() => setPaletteOpen(true)} title="命令面板（Ctrl+Shift+P）">命令</button>
         </div>
 
@@ -860,11 +973,24 @@ export default function Sound() {
               onDirtyChange={setDirtyCount}
               onActiveChange={setActiveFile}
               onCursorChange={setCursor}
+              onNewFile={() => void newFile()}
               bus={bus}
             />
           </Suspense>
         </div>
-        <div className="ws-right">
+        {/* 左（代码区）↔ 右（监视器栏）：拖这一条就能决定两边各占多少 */}
+        <Splitter
+          dir="col"
+          targetRef={rightRef}
+          invert
+          min={360}
+          max={Math.max(480, window.innerWidth - 440)}
+          onSize={setRightW}
+          onCommit={(v) => memRight.save(v)}
+          onReset={() => { setRightW(null); memRight.clear(); }}
+          title="拖动调整监视器栏宽度（双击复位）"
+        />
+        <div className="ws-right" ref={rightRef} style={rightW != null ? { flex: 'none', width: rightW } : undefined}>
           <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
             <div className="preview-wrap" style={{ flex: 1 }}>
               <PreviewPane
@@ -884,14 +1010,40 @@ export default function Sound() {
                 onToggleLoop={() => setLoop((l) => !l)}
               />
             </div>
-            <RightPanels
-              comps={comps}
-              activeComp={activeComp}
-              onSelectComp={onSelectComp}
-              projectDir={projectDir}
+            {/* 监视器 ↔ 右侧面板：面板里有合成列表等，也能拖宽拖窄 */}
+            <Splitter
+              dir="col"
+              targetRef={rpRef}
+              invert
+              min={180}
+              max={560}
+              onSize={setRpW}
+              onCommit={(v) => memRp.save(v)}
+              onReset={() => { setRpW(null); memRp.clear(); }}
+              title="拖动调整右侧面板宽度（双击复位）"
             />
+            <div className="rp-wrap" ref={rpRef} style={rpW != null ? { width: rpW } : undefined}>
+              <RightPanels
+                comps={comps}
+                activeComp={activeComp}
+                onSelectComp={onSelectComp}
+                projectDir={projectDir}
+              />
+            </div>
           </div>
-          <div className="ws-timeline">
+          {/* 时间轴高度也能拖：长片需要更高的一条来看清标记 */}
+          <Splitter
+            dir="row"
+            targetRef={tlRef}
+            invert
+            min={96}
+            max={460}
+            onSize={setTlH}
+            onCommit={(v) => memTl.save(v)}
+            onReset={() => { setTlH(null); memTl.clear(); }}
+            title="拖动调整时间轴高度（双击复位）"
+          />
+          <div className="ws-timeline" ref={tlRef} style={tlH != null ? { height: tlH } : undefined}>
             <Timeline
               duration={cur?.durationInFrames ?? 0}
               fps={cur?.fps ?? 30}

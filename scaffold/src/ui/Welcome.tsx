@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../core/tauri';
-import { TEMPLATES, type Template } from '../core/templates';
-import { Logo, IconFolder, IconPlus, IconImport, IconClose, IconWand, IconBranch, IconMcp } from './icons';
+import { TEMPLATES, DEFAULT_FRAME, type Template, type FrameSpec } from '../core/templates';
+import { frameById, frameIdOf } from '../core/frame';
+import { FrameGrid } from './FramePicker';
+import { loadSettings, saveSettings, onSettings, type Theme } from '../core/settings';
+import { Logo, IconFolder, IconPlus, IconImport, IconClose, IconWand, IconBranch, IconMcp, IconSun, IconMoon } from './icons';
 import type { RecentItem } from '../core/types';
 
 /* 欢迎页：左栏主操作 + 最近工程，右侧品牌横幅 + 模板卡片（PyCharm 式双栏）。 */
@@ -58,12 +61,21 @@ function NewProjectDialog({ preset, onClose, onOpenProject }: {
   const [tplId, setTplId] = useState(preset.id);
   const [name, setName] = useState(preset.name);
   const [loc, setLoc] = useState('');
+  const [frame, setFrame] = useState<FrameSpec>(() => ({ ...DEFAULT_FRAME }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     const def = window.localStorage.getItem('tempus.newProjectDir');
     if (def) setLoc(def);
+    /* 记住上次选的画幅与帧率：一条片子通常要连续做很多条同样尺寸的 */
+    const p = window.localStorage.getItem('tempus.newProjectFrame');
+    if (p) {
+      const hit = frameById(p);
+      if (hit) setFrame((s) => ({ ...s, width: hit.w, height: hit.h }));
+    }
+    const fps = Number(window.localStorage.getItem('tempus.newProjectFps'));
+    if (Number.isFinite(fps) && fps >= 1 && fps <= 120) setFrame((s) => ({ ...s, fps }));
   }, []);
 
   const tpl = TEMPLATES.find((t) => t.id === tplId) ?? TEMPLATES[0];
@@ -82,13 +94,16 @@ function NewProjectDialog({ preset, onClose, onOpenProject }: {
     setBusy(true);
     setErr('');
     try {
-      /* 把用户填写的工程名写进 project.json（模板里是占位名） */
-      const files: Record<string, string> = { ...tpl.files };
+      /* 全部文件按选中的画幅生成：project.json、registerComposition、
+       * 以及模板内部的字号间距都会跟着走，所以 9:16 也不会溢出 */
+      const files: Record<string, string> = tpl.build(frame);
       try {
         const meta = JSON.parse(files['project.json']);
         meta.name = name.trim();
         files['project.json'] = JSON.stringify(meta, null, 2);
       } catch { /* 模板无 project.json 时忽略 */ }
+      window.localStorage.setItem('tempus.newProjectFrame', frameIdOf(frame.width, frame.height));
+      window.localStorage.setItem('tempus.newProjectFps', String(frame.fps));
       const projDir = await api.projectNew(loc, name.trim(), files);
       onOpenProject(projDir);
     } catch (e) {
@@ -120,6 +135,26 @@ function NewProjectDialog({ preset, onClose, onOpenProject }: {
           <input type="text" className="grow" value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="选择文件夹……" />
           <button className="btn" onClick={() => void browse()}>浏览</button>
         </div>
+        <div className="npd-frame">
+          <div className="npd-frame-head">
+            <span>画幅</span>
+            <span className="npd-frame-cur mono">{frame.width} × {frame.height} · {frame.fps}fps</span>
+          </div>
+          <FrameGrid
+            value={frame}
+            max={38}
+            onPick={(w, h) => setFrame((f) => ({ ...f, width: w, height: h }))}
+          />
+          <div className="npd-fps">
+            <span>帧率</span>
+            {[24, 25, 30, 60].map((f) => (
+              <button key={f} type="button" className={`chip ${frame.fps === f ? 'active' : ''}`}
+                onClick={() => setFrame((s) => ({ ...s, fps: f }))}>
+                {f} fps
+              </button>
+            ))}
+          </div>
+        </div>
         {err && <div style={{ color: 'var(--danger)', fontSize: 12.5 }}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <button className="btn" onClick={onClose}>取消</button>
@@ -134,6 +169,14 @@ export function Welcome({ onOpenProject }: { onOpenProject: (dir: string) => voi
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [busy, setBusy] = useState('');
   const [newTpl, setNewTpl] = useState<Template | null>(null);
+  /* 主题：欢迎页也要能一键切（进工程前就该选好深浅） */
+  const [theme, setTheme] = useState<Theme>(() => loadSettings().theme);
+  useEffect(() => onSettings((s) => setTheme(s.theme)), []);
+  const toggleTheme = (): void => {
+    const next: Theme = loadSettings().theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    saveSettings({ theme: next });
+  };
 
   useEffect(() => {
     api.recentGet().then(setRecents).catch(() => setRecents([]));
@@ -252,6 +295,14 @@ export function Welcome({ onOpenProject }: { onOpenProject: (dir: string) => voi
 
       <div className="welcome-foot">
         <span>v0.1.0 · 小方工作室 · MIT</span>
+        <button
+          className="icon-btn"
+          style={{ width: 24, height: 24 }}
+          title={theme === 'dark' ? '切换到浅色主题（Ctrl+Shift+L）' : '切换到暗色主题（Ctrl+Shift+L）'}
+          onClick={toggleTheme}
+        >
+          {theme === 'dark' ? <IconSun size={14} /> : <IconMoon size={14} />}
+        </button>
         {busy && <span style={{ color: 'var(--brand)' }}>{busy}</span>}
       </div>
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { waveform, type WavePeaks } from '../core/audio';
 import { mediaUrl } from '../core/media';
 import { IconMusic, IconRefresh, IconPlay, IconPause } from '../ui/icons';
+import { Splitter } from '../ui/Splitter';
 
 /* 音频监视器（第二个监视器）。
  *
@@ -47,33 +48,11 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
   const trialRef = useRef<HTMLAudioElement | null>(null);
   const holdRef = useRef(0);
 
-  /* 高度可拖：波形太扁看不清时直接拉高 */
+  /* 高度可拖：波形太扁看不清时直接拉高（拖动交互见下方 Splitter） */
   const [h, setH] = useState(() => {
     const v = Number(localStorage.getItem('tempus.scopeH'));
     return Number.isFinite(v) && v >= 80 && v <= 420 ? v : 126;
   });
-
-  const startResize = (e: React.MouseEvent): void => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startH = h;
-    document.body.classList.add('row-resizing');
-    const onMove = (ev: MouseEvent): void => {
-      setH(Math.round(Math.max(80, Math.min(420, startH - (ev.clientY - startY))) ));
-    };
-    const onUp = (): void => {
-      document.body.classList.remove('row-resizing');
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      const el = wrapRef.current;
-      if (el) {
-        try { localStorage.setItem('tempus.scopeH', String(Math.round(el.getBoundingClientRect().height))); }
-        catch { /* 忽略 */ }
-      }
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
 
   /* 全部文件并行解码；已缓存的直接命中 */
   useEffect(() => {
@@ -326,7 +305,18 @@ export function AudioScope({ files, fps, durationFrames, frame, onSeek, failed }
 
   return (
     <div className="scope-wrap" ref={wrapRef} style={{ height: h }}>
-      <div className="scope-resize" onMouseDown={startResize} title="拖动调整示波器高度" />
+      {/* 监视器 ↔ 示波器：拖这一条，上面画面与下面波形此消彼长 */}
+      <Splitter
+        dir="row"
+        targetRef={wrapRef}
+        invert
+        min={80}
+        max={520}
+        onSize={setH}
+        onCommit={(v) => { try { localStorage.setItem('tempus.scopeH', String(Math.round(v))); } catch { /* 忽略 */ } }}
+        onReset={() => { setH(126); try { localStorage.removeItem('tempus.scopeH'); } catch { /* 忽略 */ } }}
+        title="拖动调整示波器高度（双击复位）"
+      />
       <div className="scope-head">
         <IconMusic size={13} />
         <span className="scope-title">音频监视</span>

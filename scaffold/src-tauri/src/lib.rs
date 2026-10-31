@@ -12,6 +12,10 @@ pub struct AppState {
     pub marks: Mutex<Vec<MarkEntry>>,
     pub docs: Mutex<HashMap<String, String>>,
     pub mcp_port: Mutex<u16>,
+    /* MCP → 前端的请求桥：有些能力（新建文件模板、主题 localStorage）只有前端有，
+     * 后端发 mcp-request 事件并等前端 mcp_respond 回话（带超时）。 */
+    pub mcp_pending: Mutex<HashMap<u64, std::sync::mpsc::Sender<String>>>,
+    pub mcp_seq: std::sync::atomic::AtomicU64,
     pub render_cancel: Arc<AtomicBool>,
     pub ptys: commands::terminal::PtyState,
 }
@@ -41,6 +45,8 @@ impl AppState {
             marks: Mutex::new(Vec::new()),
             docs: Mutex::new(HashMap::new()),
             mcp_port: Mutex::new(0),
+            mcp_pending: Mutex::new(HashMap::new()),
+            mcp_seq: std::sync::atomic::AtomicU64::new(0),
             render_cancel: Arc::new(AtomicBool::new(false)),
             ptys: commands::terminal::PtyState::new(),
         }
@@ -77,6 +83,20 @@ fn set_compositions(
     Ok(())
 }
 
+/* 前端对 MCP 请求的回话（见 commands::mcp::ask_frontend） */
+#[tauri::command]
+fn mcp_respond(state: tauri::State<AppState>, id: u64, payload: String) -> Result<(), String> {
+    let tx = state
+        .mcp_pending
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&id);
+    if let Some(tx) = tx {
+        let _ = tx.send(payload);
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::new())
@@ -106,6 +126,7 @@ pub fn run() {
             commands::mcp::mcp_start,
             commands::mcp::mcp_stop,
             commands::mcp::mcp_status,
+            mcp_respond,
             commands::render::render_export,
             commands::render::render_cancel,
             commands::render::video_concat,

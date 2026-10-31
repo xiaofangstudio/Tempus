@@ -98,9 +98,9 @@ function RightPanelsImpl({ comps, activeComp, onSelectComp, projectDir }: Props)
               在支持 MCP 的 AI 客户端（如 Trae / Claude）里加入以下配置，AI 即可直接读写本工程、列出合成、发起渲染：
             </p>
             <pre className="mono" style={{ background: 'var(--field)', padding: 10, borderRadius: 8, fontSize: 11, overflowX: 'auto', userSelect: 'text', border: '1px solid var(--line)' }}>{configJson}</pre>
-            <div className="section-title" style={{ marginTop: 10 }}>提供 8 个工具</div>
+            <div className="section-title" style={{ marginTop: 10 }}>提供 12 个工具</div>
             <div style={{ color: 'var(--txt2)', fontSize: 12, lineHeight: 1.9 }}>
-              project_info · list_files · read_file · write_file · get_compositions · render_video · list_skills · read_skill
+              project_info · list_files · read_file · write_file · create_file · get_compositions · set_frame · set_theme · render_video · sequencer_render · list_skills · read_skill
             </div>
           </>
         )}

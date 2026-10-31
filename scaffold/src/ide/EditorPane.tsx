@@ -8,7 +8,7 @@ import { api } from '../core/tauri';
 import { setupMonacoTypes, TEMPUS_THEME, TEMPUS_THEME_DARK } from './dts';
 import { loadSettings, onSettings, type Settings } from '../core/settings';
 import {
-  IconClose, IconUndo, IconRedo, IconFormat, IconSave
+  IconClose, IconUndo, IconRedo, IconFormat, IconSave, IconPlus
 } from '../ui/icons';
 
 /* 编辑器核心：多标签 + Monaco（TS/JSX 完整补全）+ diff 视图 + Ctrl+S 保存全部。
@@ -65,6 +65,8 @@ type Props = {
   onDirtyChange?: (n: number) => void;
   onActiveChange?: (path: string | null) => void;
   onCursorChange?: (pos: { line: number; col: number; sel: number } | null) => void;
+  /** 标签栏末尾的「新建文件」加号（Ctrl+N 记不住，给一个能点的入口） */
+  onNewFile?: () => void;
   bus: React.MutableRefObject<{ editor?: EditorHandle }>;
 };
 
@@ -114,7 +116,7 @@ function parseOutline(text: string): OutlineItem[] {
   return out;
 }
 
-function EditorPaneImpl({ projectDir, onSaved, onDirtyChange, onActiveChange, onCursorChange, bus }: Props) {
+function EditorPaneImpl({ projectDir, onSaved, onDirtyChange, onActiveChange, onCursorChange, onNewFile, bus }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const diffHostRef = useRef<HTMLDivElement>(null);
   const edRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -491,6 +493,13 @@ function EditorPaneImpl({ projectDir, onSaved, onDirtyChange, onActiveChange, on
               </span>
             </div>
           )}
+          <button
+            className="tab-new"
+            title="新建文件（Ctrl+N）"
+            onClick={() => onNewFile?.()}
+          >
+            <IconPlus size={13} />
+          </button>
         </div>
         <div className="ed-actions">
           <button className="icon-btn" title="撤销（Ctrl+Z）" disabled={!hist.undo} onClick={undo}>

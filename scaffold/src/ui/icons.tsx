@@ -194,3 +194,21 @@ export const IconUpload = ({ size, style }: P) => (
     <path d="M12 16V4M7.5 8.5L12 4l4.5 4.5" /><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" />
   </svg>
 );
+
+/* ---------- 主题 ---------- */
+export const IconSun = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="4.2" />
+    <path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M19.1 4.9l-1.9 1.9M6.8 17.2l-1.9 1.9" />
+  </svg>
+);
+export const IconMoon = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+  </svg>
+);
+export const IconDragH = ({ size, style }: P) => (
+  <svg {...s(size)} style={style} viewBox="0 0 24 24">
+    <path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01" strokeWidth={2.4} />
+  </svg>
+);
